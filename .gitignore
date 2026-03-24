@@ -1,0 +1,11 @@
+# API Keys and Secrets
+.env
+
+# Python/Streamlit Environments
+__pycache__/
+venv/
+.venv/
+
+# Mock Clinical Data
+mock_patient_data.csv
+intake_transcripts.txt
