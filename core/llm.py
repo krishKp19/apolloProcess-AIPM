@@ -1,36 +1,53 @@
 import google.generativeai as genai
 import json
+import re
 
-def get_model():
+
+def get_model(api_key):
     """
-    Automatically selects a working Gemini model with fallback
+    Dynamically fetch available Gemini models and fallback safely
     """
-    model_candidates = [
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-pro"
+    genai.configure(api_key=api_key)
+
+    fallback_models = [
+        "models/gemini-1.5-flash",
+        "models/gemini-1.5-pro",
+        "models/gemini-pro"
     ]
 
-    for model_name in model_candidates:
-        try:
-            model = genai.GenerativeModel(model_name)
-            # lightweight test call
-            model.generate_content("test", request_options={"timeout": 5})
-            return model, model_name
-        except Exception:
-            continue
+    try:
+        models = genai.list_models()
 
-    raise Exception("No available Gemini models found")
+        available_models = [
+            m.name for m in models
+            if "generateContent" in m.supported_generation_methods
+        ]
+
+        gemini_models = [m for m in available_models if "gemini" in m]
+
+        if gemini_models:
+            return genai.GenerativeModel(gemini_models[0]), gemini_models[0]
+        else:
+            return genai.GenerativeModel(fallback_models[0]), fallback_models[0]
+
+    except Exception:
+        return genai.GenerativeModel(fallback_models[0]), fallback_models[0]
+
+
+def clean_json_response(text):
+    """
+    Cleans Gemini response (removes ```json blocks)
+    """
+    text = re.sub(r"```json|```", "", text).strip()
+    return text
 
 
 def get_triage_decision(api_key, data, score, flags):
     """
-    Main function to get triage decision from Gemini
+    Main function to generate triage output
     """
-    genai.configure(api_key=api_key)
-
     try:
-        model, model_name = get_model()
+        model, model_name = get_model(api_key)
     except Exception as e:
         return {
             "error": "Model selection failed",
@@ -63,11 +80,12 @@ Return ONLY valid JSON:
     try:
         response = model.generate_content(prompt)
 
-        # Try parsing JSON safely
+        cleaned = clean_json_response(response.text)
+
         try:
-            parsed = json.loads(response.text)
+            parsed = json.loads(cleaned)
         except:
-            parsed = {"raw_response": response.text}
+            parsed = {"raw_response": cleaned}
 
         return {
             "model_used": model_name,

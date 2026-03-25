@@ -9,54 +9,51 @@ from core.scoring import risk_score
 st.set_page_config(page_title="AI Triage Assistant", layout="centered")
 
 # -----------------------
-# Sidebar (API Key)
+# Sidebar
 # -----------------------
-st.sidebar.title("Settings")
+st.sidebar.title("🔑 Settings")
 api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
 
 # -----------------------
 # Title
 # -----------------------
 st.title("🏥 AI Triage Decision Assistant (MVP)")
-st.markdown("Hybrid AI system combining rules, risk scoring, and LLM reasoning")
+st.markdown("Hybrid AI system combining rules, scoring, and LLM reasoning")
 
 # -----------------------
-# Input Form
+# Inputs
 # -----------------------
 st.subheader("Patient Information")
 
-age = st.number_input("Age", min_value=0, max_value=120, value=50)
+age = st.number_input("Age", 0, 120, 50)
 
 symptoms = st.text_input(
     "Symptoms (comma separated)",
-    placeholder="e.g., chest pain, shortness of breath"
+    placeholder="chest pain, shortness of breath"
 )
 
 bp = st.text_input("Blood Pressure (e.g., 120/80)")
 
-hr = st.number_input("Heart Rate", min_value=0, max_value=200, value=80)
+hr = st.number_input("Heart Rate", 0, 200, 80)
 
-spo2 = st.number_input("Oxygen Saturation (%)", min_value=0, max_value=100, value=98)
+spo2 = st.number_input("Oxygen Saturation (%)", 0, 100, 98)
 
-history = st.text_input(
-    "Medical History",
-    placeholder="e.g., hypertension, diabetes"
-)
+history = st.text_input("Medical History")
 
 arrival = st.selectbox("Arrival Mode", ["walk-in", "ambulance"])
 
 # -----------------------
-# Input Validation
+# Validation
 # -----------------------
 def validate_input(data):
     if not data["symptoms"]:
-        return False, "Symptoms are required"
+        return False, "Symptoms required"
     if data["spo2"] < 0 or data["spo2"] > 100:
-        return False, "Invalid oxygen saturation"
+        return False, "Invalid SpO2"
     return True, ""
 
 # -----------------------
-# Evaluate Button
+# Evaluate
 # -----------------------
 if st.button("Evaluate Patient"):
 
@@ -70,37 +67,32 @@ if st.button("Evaluate Patient"):
         "arrival": arrival
     }
 
-    # Validate input
-    is_valid, error_msg = validate_input(data)
-    if not is_valid:
-        st.error(error_msg)
+    valid, msg = validate_input(data)
+    if not valid:
+        st.error(msg)
         st.stop()
 
     # -----------------------
-    # Rules + Scoring
+    # Rules + Score
     # -----------------------
     flags = rule_engine(data)
     score = risk_score(flags)
 
     st.subheader("🔍 Intermediate Signals")
-    st.write("**Flags:**", flags)
-    st.write("**Risk Score:**", f"{score}%")
+    st.write("Flags:", flags)
+    st.write("Risk Score:", f"{score}%")
 
     # -----------------------
-    # LLM Call
+    # LLM
     # -----------------------
     if not api_key:
-        st.error("Please enter Gemini API key in sidebar")
+        st.error("Enter API key in sidebar")
     else:
-        with st.spinner("Analyzing patient data..."):
-
+        with st.spinner("Running AI analysis..."):
             result = get_triage_decision(api_key, data, score, flags)
 
-        # -----------------------
-        # Output Handling
-        # -----------------------
         if "error" in result:
-            st.error("LLM processing failed")
+            st.error("LLM failed")
             st.write(result)
 
         else:
@@ -113,27 +105,26 @@ if st.button("Evaluate Patient"):
             if isinstance(output, dict):
                 st.json(output)
 
-                # Highlight critical cases
-                if "priority_level" in output and "Level 1" in output["priority_level"]:
-                    st.error("⚠ High Priority Case - Immediate Attention Required")
+                # Highlight critical
+                if "priority_level" in output:
+                    if "Level 1" in output["priority_level"]:
+                        st.error("⚠ Critical Case - Immediate Attention")
 
             else:
                 st.write(output)
 
 # -----------------------
-# Human Override Section
+# Human Override
 # -----------------------
 st.subheader("👨‍⚕️ Human Override")
 
-override = st.text_input("Enter clinician decision (optional)")
+override = st.text_input("Enter clinician override")
 
 if override:
-    st.success("Override recorded (for audit/logging in production)")
+    st.success("Override recorded")
 
 # -----------------------
-# Footer (Safety Note)
+# Footer
 # -----------------------
 st.markdown("---")
-st.caption(
-    "This is a decision-support tool. Final clinical decisions must be made by qualified medical professionals."
-)
+st.caption("This is a clinical decision-support tool. Final decisions rest with medical professionals.")
