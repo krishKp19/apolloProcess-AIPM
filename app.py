@@ -1,63 +1,62 @@
 import streamlit as st
-import google.generativeai as genai
-import json
+from core.llm import get_triage_decision
+from core.rules import rule_engine
+from core.scoring import risk_score
 
 # -----------------------
-# Sidebar for API Key
+# Page Config
+# -----------------------
+st.set_page_config(page_title="AI Triage Assistant", layout="centered")
+
+# -----------------------
+# Sidebar (API Key)
 # -----------------------
 st.sidebar.title("Settings")
 api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
 
-if api_key:
-    genai.configure(api_key=api_key)
+# -----------------------
+# Title
+# -----------------------
+st.title("🏥 AI Triage Decision Assistant (MVP)")
+st.markdown("Hybrid AI system combining rules, risk scoring, and LLM reasoning")
 
 # -----------------------
-# UI
+# Input Form
 # -----------------------
-st.title("AI Triage Decision Assistant (MVP)")
+st.subheader("Patient Information")
 
-age = st.number_input("Age", 0, 120, 50)
-symptoms = st.text_input("Symptoms (comma separated)")
+age = st.number_input("Age", min_value=0, max_value=120, value=50)
+
+symptoms = st.text_input(
+    "Symptoms (comma separated)",
+    placeholder="e.g., chest pain, shortness of breath"
+)
+
 bp = st.text_input("Blood Pressure (e.g., 120/80)")
-hr = st.number_input("Heart Rate", 0, 200, 80)
-spo2 = st.number_input("Oxygen Saturation", 0, 100, 98)
-history = st.text_input("Medical History")
+
+hr = st.number_input("Heart Rate", min_value=0, max_value=200, value=80)
+
+spo2 = st.number_input("Oxygen Saturation (%)", min_value=0, max_value=100, value=98)
+
+history = st.text_input(
+    "Medical History",
+    placeholder="e.g., hypertension, diabetes"
+)
+
 arrival = st.selectbox("Arrival Mode", ["walk-in", "ambulance"])
 
 # -----------------------
-# Rules Engine
+# Input Validation
 # -----------------------
-def rule_engine(data):
-    flags = []
-
-    if data["spo2"] < 92:
-        flags.append("low_oxygen")
-
-    if "chest pain" in data["symptoms"]:
-        flags.append("cardiac_risk")
-
-    if data["hr"] > 110:
-        flags.append("tachycardia")
-
-    return flags
+def validate_input(data):
+    if not data["symptoms"]:
+        return False, "Symptoms are required"
+    if data["spo2"] < 0 or data["spo2"] > 100:
+        return False, "Invalid oxygen saturation"
+    return True, ""
 
 # -----------------------
-# Risk Score
-# -----------------------
-def risk_score(flags):
-    score = 0
-
-    if "low_oxygen" in flags:
-        score += 40
-    if "cardiac_risk" in flags:
-        score += 30
-    if "tachycardia" in flags:
-        score += 20
-
-    return min(score, 100)
-
-# -----------------------
-# Generate Output
+# Evaluate Button
 # -----------------------
 if st.button("Evaluate Patient"):
 
@@ -71,55 +70,70 @@ if st.button("Evaluate Patient"):
         "arrival": arrival
     }
 
+    # Validate input
+    is_valid, error_msg = validate_input(data)
+    if not is_valid:
+        st.error(error_msg)
+        st.stop()
+
+    # -----------------------
+    # Rules + Scoring
+    # -----------------------
     flags = rule_engine(data)
     score = risk_score(flags)
 
-    st.subheader("Intermediate Signals")
-    st.write("Flags:", flags)
-    st.write("Risk Score:", score)
+    st.subheader("🔍 Intermediate Signals")
+    st.write("**Flags:**", flags)
+    st.write("**Risk Score:**", f"{score}%")
 
+    # -----------------------
+    # LLM Call
+    # -----------------------
     if not api_key:
-        st.error("Please enter API key")
+        st.error("Please enter Gemini API key in sidebar")
     else:
-        model = genai.GenerativeModel("gemini-pro")
+        with st.spinner("Analyzing patient data..."):
 
-        prompt = f"""
-You are a clinical triage support assistant.
+            result = get_triage_decision(api_key, data, score, flags)
 
-STRICT RULES:
-- Do NOT provide diagnosis
-- Do NOT replace clinician judgment
-- Base reasoning ONLY on provided data
+        # -----------------------
+        # Output Handling
+        # -----------------------
+        if "error" in result:
+            st.error("LLM processing failed")
+            st.write(result)
 
-Patient Data:
-{data}
+        else:
+            st.success(f"Model used: {result['model_used']}")
 
-Risk Score: {score}
-Flags: {flags}
+            output = result["output"]
 
-Return ONLY valid JSON:
-{{
-  "priority_level": "",
-  "risk_score": "",
-  "reasoning": "",
-  "recommended_action": ""
-}}
-"""
+            st.subheader("🧠 AI Recommendation")
 
-        response = model.generate_content(prompt)
+            if isinstance(output, dict):
+                st.json(output)
 
-        try:
-            output = json.loads(response.text)
-            st.subheader("AI Recommendation")
-            st.json(output)
-        except:
-            st.error("Invalid response format")
-            st.write(response.text)
+                # Highlight critical cases
+                if "priority_level" in output and "Level 1" in output["priority_level"]:
+                    st.error("⚠ High Priority Case - Immediate Attention Required")
+
+            else:
+                st.write(output)
 
 # -----------------------
-# Human Override
+# Human Override Section
 # -----------------------
-st.subheader("Human Override")
+st.subheader("👨‍⚕️ Human Override")
+
 override = st.text_input("Enter clinician decision (optional)")
+
 if override:
-    st.success("Override recorded")
+    st.success("Override recorded (for audit/logging in production)")
+
+# -----------------------
+# Footer (Safety Note)
+# -----------------------
+st.markdown("---")
+st.caption(
+    "This is a decision-support tool. Final clinical decisions must be made by qualified medical professionals."
+)
