@@ -1,0 +1,11 @@
+[
+  {
+    "age": 68,
+    "symptoms": "chest pain, shortness of breath",
+    "bp": "150/95",
+    "hr": 120,
+    "spo2": 90,
+    "history": "hypertension",
+    "arrival": "ambulance"
+  }
+]
